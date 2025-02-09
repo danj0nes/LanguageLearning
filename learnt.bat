@@ -1,0 +1,1 @@
+python "%~dp0search_in_lists.py"
