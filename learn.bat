@@ -1,0 +1,1 @@
+python "%~dp0learn_words.py"

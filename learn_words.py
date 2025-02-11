@@ -3,13 +3,24 @@ import pandas as pd
 import json
 from tqdm import tqdm
 from datetime import datetime
+import keyboard
 
 BLANK_RESULTS_STRING = "XXXXXXXXXX"
 WEIGHT_1 = 2
 WEIGHT_2 = 2
 WEIGHT_3 = 1
 
+RED = "\033[31m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+BLUE = "\033[34m"
+RESET = "\033[0m"  # Reset to default color
+
 today_date = pd.to_datetime(datetime.today().date())
+
+recent = []
+correct = 0
+incorrect = 0
 
 
 def calc_learnt_score(df, unique_ids=None):
@@ -22,27 +33,26 @@ def calc_learnt_score(df, unique_ids=None):
     Formula:
     learnt_score = WEIGHT_1 * (1 - MIN_MAX(days_since_last_test)) + (WEIGHT_2 * correct_percentage) + WEIGHT_3 * MIN_MAX(tested_count)
     """
-    today = pd.to_datetime(today_date)
-
-    # Check if the latest test date is today
-    if (
-        not df["date_last_tested"].dropna().empty
-        and df["date_last_tested"].max().date() == today.date()
-    ):
-        print("Latest test date is today. No recalculations needed.")
-        return df
 
     # Select rows to update
     if unique_ids:
         rows_to_update = df[df["unique_id"].isin(unique_ids)].index
         use_tqdm = False  # No progress bar for specific IDs
     else:
+        # Check if the latest test date is today
+        if (
+            df["date_last_tested"].dropna().empty
+            or df["date_last_tested"].max().date() == today_date
+        ):
+            print("Latest test date is today. No recalculations needed.")
+            return df
+
         rows_to_update = df.index
         use_tqdm = True  # Use progress bar when updating all rows
 
     # Get the min and max for days_since_last_test and tested_count columns
-    min_days = (today - df["date_last_tested"].max().date()).days
-    max_days = (today - df["date_last_tested"].min().date()).days
+    min_days = (today_date - df["date_last_tested"].max()).days
+    max_days = (today_date - df["date_last_tested"].min()).days
 
     min_tested_count = df["tested_count"].min()
     max_tested_count = df["tested_count"].max()
@@ -51,13 +61,13 @@ def calc_learnt_score(df, unique_ids=None):
     for i in tqdm(rows_to_update, desc="Updating learnt scores", disable=not use_tqdm):
         row = df.loc[i]
 
-        # Skip calculation if tested_count == 0
-        if row["tested_count"] == 0:
-            continue
+        # # Skip calculation if tested_count == 0
+        # if row["tested_count"] == 0:
+        #     continue
 
         # Calculate days since last tested
         if pd.notna(row["date_last_tested"]):
-            days_since_last_test = (today - row["date_last_tested"]).days
+            days_since_last_test = (today_date - row["date_last_tested"]).days
         else:
             days_since_last_test = 0
 
@@ -159,6 +169,9 @@ def load_new_terms(df, directory=".", filename="terms.json"):
     """
     print("Searching for new terms.")
     new_entries = []
+
+    highest_id = df["unique_id"].max() if not df.empty else 0
+
     existing_terms = set(df["term"])  # Get existing terms for quick lookup
     txt_files = [
         os.path.join(root, file)
@@ -181,15 +194,17 @@ def load_new_terms(df, directory=".", filename="terms.json"):
             if term not in existing_terms:
                 new_entries.append(
                     {
-                        "unique_id": df["unique_id"].max() + 1 if not df.empty else 1,
+                        "unique_id": highest_id + 1,
                         "learnt_score": 0.0,
                         "term": term,
                         "definition": definition,
                         "date_last_tested": pd.NaT,
-                        "correct_percentage": BLANK_RESULTS_STRING,
+                        "correct_percentage": 0.0,
+                        "latest_results": BLANK_RESULTS_STRING,
                         "tested_count": 0,
                     }
                 )
+                highest_id += 1
                 existing_terms.add(term)  # Avoid duplicates within this run
 
     # Append new data and save if there are new entries
@@ -207,23 +222,102 @@ def sort_df(df):
     """
     Sorts the DataFrame by increasing learnt_score.
     """
-    return df.sort_values(by="learnt_score", ascending=True, ignore_index=True)
+    return df.sort_values(
+        by=["learnt_score", "unique_id"], ascending=[True, True], ignore_index=True
+    )
 
 
-def get_top():
-    return
+def save_result(df, results: list):
+    ids = []
+    print(results)
+    for id, isCorrect, learnt_score in results:
+        if isCorrect != None:
+            df.loc[df["unique_id"] == id, "tested_count"] += 1
+            df.loc[df["unique_id"] == id, "date_last_tested"] = today_date
+            latest_results = df.loc[df["unique_id"] == id, "latest_results"].values[0]
+            latest_results = ("O" if isCorrect else "X") + latest_results[:-1]
+            df.loc[df["unique_id"] == id, "latest_results"] = latest_results
+            df.loc[df["unique_id"] == id, "correct_percentage"] = (
+                latest_results.count("O") / 10
+            )
+        ids.append(id)
+
+    calc_learnt_score(df, ids)
 
 
-def save_result():
-    # normalise and calc learnt score
-    return
+def get_keypress(df, id, term, definition, learnt_score, showing_term: bool = True):
+    global recent
+    global correct
+    global incorrect
+    event = keyboard.read_event(suppress=True)
+    if event.event_type == keyboard.KEY_DOWN:  # Detect only key presses (not releases)
+        if event.name == "left":
+            recent.append((id, False, learnt_score))
+            incorrect += 1
+            return df, True
+        elif event.name == "right":
+            recent.append((id, True, learnt_score))
+            correct += 1
+            return df, True
+        elif event.name == "down":
+            print("\033[A\033[K", end="")  # Move up and clear the line
+            print(
+                f"{RED}{incorrect}{RESET}  {definition if showing_term else term}  {GREEN}{correct}{RESET}  learnt score: {learnt_score}"
+            )
+            showing_term = not showing_term
+            return get_keypress(df, id, term, definition, learnt_score, showing_term)
+        elif event.name == "up":
+            if len(recent) > 0:
+                df.loc[df["unique_id"] == id, "learnt_score"] = learnt_score
+                df.loc[df["unique_id"] == recent[-1][0], "learnt_score"] = recent[-1][2]
+                if recent[-1][1]:
+                    correct -= 1
+                else:
+                    incorrect -= 1
+                recent = recent[:-1]
+            else:
+                return get_keypress(
+                    df, id, term, definition, learnt_score, showing_term
+                )
+            return df, True
+        elif event.name == "q":
+            recent.append((id, None, learnt_score))
+            print("Exiting...")
+            save_result(df, recent)
+            save_df(df)
+            return df, False
+    return get_keypress(df, id, term, definition, learnt_score, showing_term)
 
 
-def learn():
-    return
+def learn(df):
+    while True:
+        df = sort_df(df)
+        id = df["unique_id"].iloc[0]
+        term = df["term"].iloc[0]
+        definition = df["definition"].iloc[0]
+        learnt_score = df["learnt_score"].iloc[0]
+        df.loc[df["unique_id"] == id, "learnt_score"] = 99999
+
+        print("\033[A\033[K", end="")  # Move up and clear the line
+        print(
+            f"{RED}{incorrect}{RESET}  {term}  {GREEN}{correct}{RESET}  learnt score: {learnt_score}"
+        )
+
+        df, notQuit = get_keypress(df, id, term, definition, learnt_score)
+
+        if notQuit:
+            if len(recent) >= 10:
+                save_result(df, [recent[0]])
+                recent.pop(0)
+        else:
+            break
 
 
 terms = load_df()
+
+updated_terms = calc_learnt_score(df=load_new_terms(terms))
+
+learn(df=updated_terms)
 
 
 """
@@ -247,4 +341,10 @@ current phrases tested (array length 10)
 df struction
 
 id      learnt score     term    definition      date last tested    correct percentage  tested count
+
+
+TODO
+
+sort json by unique id
+sort df by learnscore then unique id
 """
