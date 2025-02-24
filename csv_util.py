@@ -1,5 +1,4 @@
 import pandas as pd
-import json
 import os
 from tqdm import tqdm
 
@@ -26,53 +25,44 @@ def create_term_df():
     return df
 
 
-def save_df(df, filename="terms.json", verbose: bool = True):
+def save_df(df: pd.DataFrame, filename: str = "terms.csv", verbose: bool = True):
     """
-    Saves a DataFrame as a JSON file with unique_id as the key
-    and the remaining columns as dictionary values.
-    """
-    # Convert DataFrame to a dictionary with unique_id as the key
-    data_dict = df.set_index("unique_id").to_dict(orient="index")
+    Saves a DataFrame as a CSV file.
 
-    # Save to a JSON file
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(
-            data_dict, f, indent=4, default=str
-        )  # Ensure dates are converted to strings
+    index=False stops the index of the df being written in file.
+    """
+    df.to_csv(filename, index=False)
 
     if verbose:
         print(f"Data saved to {filename}")
 
 
-def load_df(filename="terms.json"):
+def load_df(filename="terms.csv"):
     """
-    Loads a JSON file and converts it back to a Pandas DataFrame.
+    Loads a CSV file and converts it back to a Pandas DataFrame.
     """
-    try:
-        with open(filename, "r", encoding="utf-8") as f:
-            data_dict = json.load(f)  # Load JSON as a dictionary
-
-        # Convert to DataFrame
-        df = pd.DataFrame.from_dict(data_dict, orient="index").reset_index()
-        df.rename(
-            columns={"index": "unique_id"}, inplace=True
-        )  # Rename back to unique_id
-
-        # Convert date_last_tested back to datetime
-        if "date_last_tested" in df.columns:
-            df["date_last_tested"] = pd.to_datetime(
-                df["date_last_tested"], errors="coerce"
-            )
-
-        print(f"Data loaded from {filename}")
-        return df
-
-    except FileNotFoundError:
+    if not os.path.exists(filename):
         print("terms.json not found.")
         return create_term_df()
 
+    df = pd.read_csv(
+        filename,
+        parse_dates=["date_last_tested"],
+        dtype={
+            "unique_id": int,
+            "learnt_score": float,
+            "term": str,
+            "definition": str,
+            "correct_percentage": float,
+            "latest_results": str,
+            "tested_count": int,
+        },
+    )
+    print(f"Data loaded from {filename}")
+    return df
 
-def load_new_terms(df, directory=".", filename="terms.json"):
+
+def load_new_terms(df, directory=".", filename="terms.csv"):
     """
     Walks through the given directory, extracts term-definition pairs from .txt files,
     and adds any new terms to the DataFrame.
