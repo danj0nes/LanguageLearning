@@ -16,7 +16,6 @@ def create_term_df():
         "term": pd.Series(dtype="string"),  # String
         "definition": pd.Series(dtype="string"),  # String
         "date_last_tested": pd.Series(dtype="datetime64[ns]"),  # Date
-        "correct_percentage": pd.Series(dtype="float"),  # Float
         "latest_results": pd.Series(dtype="string"),  # String
         "tested_count": pd.Series(dtype="int64"),  # Whole number
     }
@@ -53,11 +52,11 @@ def load_df(filename="terms.csv"):
             "learnt_score": float,
             "term": str,
             "definition": str,
-            "correct_percentage": float,
             "latest_results": str,
             "tested_count": int,
         },
     )
+    # df["date_last_tested"] = pd.to_datetime(df["date_last_tested"], errors="coerce")
     print(f"Data loaded from {filename}")
     return df
 
@@ -99,7 +98,6 @@ def load_new_terms(df, directory=".", filename="terms.csv"):
                         "term": term,
                         "definition": definition,
                         "date_last_tested": pd.NaT,
-                        "correct_percentage": 0.0,
                         "latest_results": BLANK_RESULTS_STRING,
                         "tested_count": 0,
                     }

@@ -5,8 +5,8 @@ from datetime import datetime
 import keyboard
 from enum import Enum
 
-WEIGHT_DAYS_SINCE = 2
-WEIGHT_CORRECT = 2
+WEIGHT_DAYS_SINCE = 1
+WEIGHT_CORRECT = 1
 WEIGHT_TESTED = 1
 
 TESTED_MAX_CAP = 15
@@ -29,7 +29,7 @@ class ReturnCode(Enum):
     REVERSE = 4
 
 
-def calc_learnt_score(df, unique_ids=None):
+def calc_learnt_score(df, unique_ids=None) -> pd.DataFrame:
     """
     Recalculates the learnt_score for each row in the DataFrame.
 
@@ -45,7 +45,7 @@ def calc_learnt_score(df, unique_ids=None):
             result = (value - min) / (max - min)
             return (1 - result) if inverse else result
         else:
-            return 0
+            return 1 if inverse else 0
 
     # Select rows to update
     if unique_ids:
@@ -56,8 +56,8 @@ def calc_learnt_score(df, unique_ids=None):
         use_tqdm = True  # Use progress bar when updating all rows
 
     # Get the min and max for days_since_last_test and tested_count columns
-    min_days = (today_date - df["date_last_tested"].max()).days
     max_days = (today_date - df["date_last_tested"].min()).days
+    print(max_days)
 
     max_tested_count = df["tested_count"].max()
 
@@ -73,31 +73,40 @@ def calc_learnt_score(df, unique_ids=None):
         if pd.notna(row["date_last_tested"]):
             days_since_last_test = (today_date - row["date_last_tested"]).days
         else:
-            days_since_last_test = 0
+            days_since_last_test = None
+
+        # Calculate percentage correct
+        correct_percentage = row["latest_results"].count("O") / 10
 
         # Min-max normalize days_since_last_test
-        days_since_last_test_normalized = min_max(
-            min=min_days, max=max_days, value=days_since_last_test, inverse=True
-        )
+        if days_since_last_test != None:
+            days_since_last_test_normalized = min_max(
+                min=0, max=max_days, value=days_since_last_test, inverse=True
+            )
+        else:
+            days_since_last_test_normalized = 0
 
         # Piecewise weighted Min-max normalize tested_count
         tested_count_normalized = (
-            min_max(min=0, max=TESTED_MAX_CAP, value=min(row["tested_count"], TESTED_MAX_CAP)) * TESTED_CAP_WEIGHTING + 
-            min_max(min=TESTED_MAX_CAP, max=max(max_tested_count, TESTED_MAX_CAP), value=max(row["tested_count"], TESTED_MAX_CAP)) * (1-TESTED_CAP_WEIGHTING)
+            min(row["tested_count"], TESTED_MAX_CAP) / TESTED_MAX_CAP
+        ) * TESTED_CAP_WEIGHTING + min_max(
+            min=TESTED_MAX_CAP,
+            max=max(max_tested_count, TESTED_MAX_CAP),
+            value=max(row["tested_count"], TESTED_MAX_CAP),
+        ) * (
+            1 - TESTED_CAP_WEIGHTING
         )
-
         # Compute new learnt_score
         df.at[i, "learnt_score"] = (
             (WEIGHT_DAYS_SINCE * days_since_last_test_normalized)
-            + (WEIGHT_CORRECT * row["correct_percentage"])
+            + (WEIGHT_CORRECT * correct_percentage)
             + (WEIGHT_TESTED * tested_count_normalized)
         ) / (WEIGHT_DAYS_SINCE + WEIGHT_CORRECT + WEIGHT_TESTED)
 
     if not unique_ids:
         print("Learnt scores updated.")
 
-    df = sort_df(df)
-    return df
+    return sort_df(df)
 
 
 def sort_df(df):
@@ -106,11 +115,11 @@ def sort_df(df):
     )
 
 
-def save_result(df, recent: list, repeat_incorrect_ids: list):
+def save_result(df, recent: list, repeat_incorrect_ids: list) -> pd.DataFrame:
     recalc_all = False
 
     if not recent:
-        return
+        return df
 
     for id, isCorrect, repeat_incorrect in recent:
         if isCorrect:
@@ -126,16 +135,15 @@ def save_result(df, recent: list, repeat_incorrect_ids: list):
             df.loc[df["unique_id"] == id, "date_last_tested"] = today_date
             latest_results = df.loc[df["unique_id"] == id, "latest_results"].values[0]
             latest_results = ("X" if repeat_incorrect else "O") + latest_results[:-1]
-            df.loc[df["unique_id"] == id, "correct_percentage"] = (
-                latest_results.count("O") / 10
-            )
             df.loc[df["unique_id"] == id, "latest_results"] = latest_results
             df.loc[df["unique_id"] == id, "tested_count"] += 1
             # end of update stats
         else:
             repeat_incorrect_ids.append(id)
 
-    calc_learnt_score(df, None if recalc_all else [result[0] for result in recent])
+    return calc_learnt_score(
+        df, None if recalc_all else [result[0] for result in recent]
+    )
 
 
 def get_keypress(
@@ -253,7 +261,9 @@ def learn(df, allow_repeats_after: int = 9):
         print(
             f"{RED}{incorrect:>{3}}{RESET}{'':4}{BLUE}learnt score: {int(top_term['learnt_score'] * 100)}%{RESET}{'':4}{GREEN}{correct}{RESET}"
         )
-        print(f"{YELLOW if top_term["repeat_incorrect"] else ''}{top_term['term']:^32}{RESET}")
+        print(
+            f"{YELLOW if top_term['repeat_incorrect'] else ''}{top_term['term']:^32}{RESET}"
+        )
 
         recent, correct, incorrect, returnCode = get_keypress(
             recent, correct, incorrect, top_term
@@ -261,7 +271,7 @@ def learn(df, allow_repeats_after: int = 9):
 
         if returnCode == ReturnCode.CONTINUE:
             if len(recent) > recent_length:
-                save_result(df, [recent[0]], repeat_incorrect_ids)
+                df = save_result(df, [recent[0]], repeat_incorrect_ids)
                 recent.pop(0)
 
         elif returnCode == ReturnCode.REVERSE:
@@ -273,14 +283,14 @@ def learn(df, allow_repeats_after: int = 9):
             break
 
         elif returnCode == ReturnCode.SAVE:
-            save_result(df, recent, repeat_incorrect_ids)
+            df = save_result(df, recent, repeat_incorrect_ids)
             save_df(df, verbose=False)
             future_terms.append((top_term["id"], top_term["repeat_incorrect"]))
             recent = []
             correct = 0
             incorrect = 0
 
-    save_result(df, recent, repeat_incorrect_ids)
+    df = save_result(df, recent, repeat_incorrect_ids)
     save_df(df)
 
 
