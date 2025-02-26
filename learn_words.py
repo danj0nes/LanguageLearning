@@ -75,9 +75,12 @@ def calc_learnt_score(df, unique_ids=None) -> pd.DataFrame:
             days_since_last_test = None
 
         # Calculate percentage correct
-        correct_percentage = row["latest_results"].count("O") / len(
-            row["latest_results"]
-        )
+        if row["latest_results"] != BLANK_RESULTS_STRING:
+            correct_percentage = row["latest_results"].count("O") / len(
+                row["latest_results"]
+            )
+        else:
+            correct_percentage = 0
 
         # Min-max normalize days_since_last_test
         if days_since_last_test != None:
@@ -88,15 +91,18 @@ def calc_learnt_score(df, unique_ids=None) -> pd.DataFrame:
             days_since_last_test_normalized = 0
 
         # Piecewise weighted Min-max normalize tested_count
-        tested_count_normalized = (
+        lower_piece = (
             min(row["tested_count"], TESTED_MAX_CAP) / TESTED_MAX_CAP
-        ) * TESTED_CAP_WEIGHTING + min_max(
+        ) * TESTED_CAP_WEIGHTING
+
+        upper_piece = min_max(
             min=TESTED_MAX_CAP,
             max=max(max_tested_count, TESTED_MAX_CAP),
             value=max(row["tested_count"], TESTED_MAX_CAP),
-        ) * (
-            1 - TESTED_CAP_WEIGHTING
-        )
+        ) * (1 - TESTED_CAP_WEIGHTING)
+
+        tested_count_normalized = lower_piece + upper_piece
+
         # Compute new learnt_score
         df.at[i, "learnt_score"] = (
             (WEIGHT_DAYS_SINCE * days_since_last_test_normalized)
@@ -135,9 +141,12 @@ def save_result(df, recent: list, repeat_incorrect_ids: list) -> pd.DataFrame:
             # update stats for term with result
             df.loc[df["unique_id"] == id, "date_last_tested"] = today_date
             latest_results = df.loc[df["unique_id"] == id, "latest_results"].values[0]
-            latest_results = ("X" if repeat_incorrect else "O") + (
-                latest_results if len(latest_results) < 10 else latest_results[:-1]
-            )
+            if latest_results != BLANK_RESULTS_STRING:
+                latest_results = ("X" if repeat_incorrect else "O") + (
+                    latest_results if len(latest_results) < 10 else latest_results[:-1]
+                )
+            else:
+                latest_results = "X" if repeat_incorrect else "O"
             df.loc[df["unique_id"] == id, "latest_results"] = latest_results
             df.loc[df["unique_id"] == id, "tested_count"] += 1
             # end of update stats

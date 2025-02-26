@@ -4,7 +4,7 @@ from tqdm import tqdm
 import re
 
 
-BLANK_RESULTS_STRING = ""
+BLANK_RESULTS_STRING = "No Recent Results"
 
 # Compile regex once for efficiency
 BRACKET_NUMBER_PATTERN = re.compile(r"\[(\d+)\]")
