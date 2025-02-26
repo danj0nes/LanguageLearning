@@ -1,10 +1,16 @@
 import pandas as pd
 import os
 from tqdm import tqdm
-import datetime
+import re
 
 
 BLANK_RESULTS_STRING = ""
+
+# Compile regex once for efficiency
+BRACKET_NUMBER_PATTERN = re.compile(r"\[(\d+)\]")
+
+# Dictionary for term type lookups
+TERM_TYPES = ["verbe", "mot", "nom", "adjectif", "phrase"]
 
 
 def create_term_df():
@@ -16,7 +22,7 @@ def create_term_df():
         "learnt_score": pd.Series(dtype="float"),  # Decimal number
         "term": pd.Series(dtype="string"),  # String
         "definition": pd.Series(dtype="string"),  # String
-        "date_added": pd.Series(dtype="datetime64[ns]"),  # Date
+        "list_number": pd.Series(dtype="int64"),  # Whole number
         "term_type": pd.Series(dtype="string"),  # String
         "date_last_tested": pd.Series(dtype="datetime64[ns]"),  # Date
         "latest_results": pd.Series(dtype="string"),  # String
@@ -49,12 +55,13 @@ def load_df(filename="terms.csv"):
 
     df = pd.read_csv(
         filename,
-        parse_dates=["date_last_tested", "date_added"],
+        parse_dates=["date_last_tested"],
         dtype={
             "unique_id": int,
             "learnt_score": float,
             "term": str,
             "definition": str,
+            "list_number": int,
             "term_type": str,
             "latest_results": str,
             "tested_count": int,
@@ -71,23 +78,20 @@ def load_new_terms(df, directory=".", filename="terms.csv"):
     and adds any new terms to the DataFrame.
     """
 
-    def get_term_type(file_name):
+    def get_file_info(file_name):
         """
-        Determines the term type based on the file name.
+        Determines the term type and list number based on the file name.
         """
         file_name = file_name.lower()
-        if "verbe" in file_name:
-            return "verbe"
-        elif "mot" in file_name:
-            return "mot"
-        elif "nom" in file_name:
-            return "nom"
-        elif "adjectif" in file_name:
-            return "adjectif"
-        elif "phrase" in file_name:
-            return "phrase"
-        else:
-            return "other"
+
+        # Extract number from brackets
+        match = BRACKET_NUMBER_PATTERN.search(file_name)
+        list_number = int(match.group(1)) if match else None
+
+        # Find the first matching term type or return "other"
+        term_type = next((term for term in TERM_TYPES if term in file_name), "other")
+
+        return term_type, list_number
 
     print("Searching for new terms.")
     new_entries = []
@@ -109,11 +113,7 @@ def load_new_terms(df, directory=".", filename="terms.csv"):
         with open(file_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
-        file_creation_timestamp = os.path.getctime(file_path)
-        file_creation_date = datetime.datetime.fromtimestamp(
-            file_creation_timestamp
-        ).date()
-        term_type = get_term_type(os.path.basename(file_path))
+        term_type, list_number = get_file_info(os.path.basename(file_path))
 
         # Extract term-definition pairs (every two lines)
         for i in range(0, len(lines) - 1, 2):
@@ -128,7 +128,7 @@ def load_new_terms(df, directory=".", filename="terms.csv"):
                         "learnt_score": 0.0,
                         "term": term,
                         "definition": definition,
-                        "date_added": file_creation_date,
+                        "list_number": list_number,
                         "term_type": term_type,
                         "date_last_tested": pd.NaT,
                         "latest_results": BLANK_RESULTS_STRING,
