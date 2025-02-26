@@ -57,7 +57,6 @@ def calc_learnt_score(df, unique_ids=None) -> pd.DataFrame:
 
     # Get the min and max for days_since_last_test and tested_count columns
     max_days = (today_date - df["date_last_tested"].min()).days
-    print(max_days)
 
     max_tested_count = df["tested_count"].max()
 
@@ -66,7 +65,7 @@ def calc_learnt_score(df, unique_ids=None) -> pd.DataFrame:
         row = df.loc[i]
 
         # Skip calculation if tested_count == 0
-        if row["tested_count"] == 0 and not unique_ids:
+        if row["tested_count"] == 0:
             continue
 
         # Calculate days since last tested
@@ -76,7 +75,9 @@ def calc_learnt_score(df, unique_ids=None) -> pd.DataFrame:
             days_since_last_test = None
 
         # Calculate percentage correct
-        correct_percentage = row["latest_results"].count("O") / 10
+        correct_percentage = row["latest_results"].count("O") / len(
+            row["latest_results"]
+        )
 
         # Min-max normalize days_since_last_test
         if days_since_last_test != None:
@@ -134,7 +135,9 @@ def save_result(df, recent: list, repeat_incorrect_ids: list) -> pd.DataFrame:
             # update stats for term with result
             df.loc[df["unique_id"] == id, "date_last_tested"] = today_date
             latest_results = df.loc[df["unique_id"] == id, "latest_results"].values[0]
-            latest_results = ("X" if repeat_incorrect else "O") + latest_results[:-1]
+            latest_results = ("X" if repeat_incorrect else "O") + (
+                latest_results if len(latest_results) < 10 else latest_results[:-1]
+            )
             df.loc[df["unique_id"] == id, "latest_results"] = latest_results
             df.loc[df["unique_id"] == id, "tested_count"] += 1
             # end of update stats

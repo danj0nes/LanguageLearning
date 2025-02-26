@@ -1,9 +1,10 @@
 import pandas as pd
 import os
 from tqdm import tqdm
+import datetime
 
 
-BLANK_RESULTS_STRING = "XXXXXXXXXX"
+BLANK_RESULTS_STRING = ""
 
 
 def create_term_df():
@@ -15,6 +16,8 @@ def create_term_df():
         "learnt_score": pd.Series(dtype="float"),  # Decimal number
         "term": pd.Series(dtype="string"),  # String
         "definition": pd.Series(dtype="string"),  # String
+        "date_added": pd.Series(dtype="datetime64[ns]"),  # Date
+        "term_type": pd.Series(dtype="string"),  # String
         "date_last_tested": pd.Series(dtype="datetime64[ns]"),  # Date
         "latest_results": pd.Series(dtype="string"),  # String
         "tested_count": pd.Series(dtype="int64"),  # Whole number
@@ -46,12 +49,13 @@ def load_df(filename="terms.csv"):
 
     df = pd.read_csv(
         filename,
-        parse_dates=["date_last_tested"],
+        parse_dates=["date_last_tested", "date_added"],
         dtype={
             "unique_id": int,
             "learnt_score": float,
             "term": str,
             "definition": str,
+            "term_type": str,
             "latest_results": str,
             "tested_count": int,
         },
@@ -66,12 +70,33 @@ def load_new_terms(df, directory=".", filename="terms.csv"):
     Walks through the given directory, extracts term-definition pairs from .txt files,
     and adds any new terms to the DataFrame.
     """
+
+    def get_term_type(file_name):
+        """
+        Determines the term type based on the file name.
+        """
+        file_name = file_name.lower()
+        if "verbe" in file_name:
+            return "verbe"
+        elif "mot" in file_name:
+            return "mot"
+        elif "nom" in file_name:
+            return "nom"
+        elif "adjectif" in file_name:
+            return "adjectif"
+        elif "phrase" in file_name:
+            return "phrase"
+        else:
+            return "other"
+
     print("Searching for new terms.")
     new_entries = []
 
     highest_id = df["unique_id"].max() if not df.empty else 0
 
     existing_terms = set(df["term"])  # Get existing terms for quick lookup
+    existing_definitions = set(df["definition"])
+
     txt_files = [
         os.path.join(root, file)
         for root, _, files in os.walk(directory)
@@ -84,19 +109,27 @@ def load_new_terms(df, directory=".", filename="terms.csv"):
         with open(file_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
+        file_creation_timestamp = os.path.getctime(file_path)
+        file_creation_date = datetime.datetime.fromtimestamp(
+            file_creation_timestamp
+        ).date()
+        term_type = get_term_type(os.path.basename(file_path))
+
         # Extract term-definition pairs (every two lines)
         for i in range(0, len(lines) - 1, 2):
             term = lines[i].strip()
             definition = lines[i + 1].strip()
 
             # Only add new terms
-            if term not in existing_terms:
+            if term not in existing_terms and definition not in existing_definitions:
                 new_entries.append(
                     {
                         "unique_id": highest_id + 1,
                         "learnt_score": 0.0,
                         "term": term,
                         "definition": definition,
+                        "date_added": file_creation_date,
+                        "term_type": term_type,
                         "date_last_tested": pd.NaT,
                         "latest_results": BLANK_RESULTS_STRING,
                         "tested_count": 0,
