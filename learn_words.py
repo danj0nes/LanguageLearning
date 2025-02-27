@@ -308,6 +308,6 @@ def learn(df, allow_repeats_after: int = 9):
 
 terms = load_df()
 
-updated_terms = calc_learnt_score(df=load_new_terms(terms))
+updated_terms = calc_learnt_score(df=load_new_lists(terms))
 
 learn(df=updated_terms)

@@ -23,6 +23,7 @@ def create_term_df():
         "term": pd.Series(dtype="string"),  # String
         "definition": pd.Series(dtype="string"),  # String
         "list_number": pd.Series(dtype="int64"),  # Whole number
+        "list_term_number": pd.Series(dtype="int64"),  # Whole number
         "term_type": pd.Series(dtype="string"),  # String
         "date_last_tested": pd.Series(dtype="datetime64[ns]"),  # Date
         "latest_results": pd.Series(dtype="string"),  # String
@@ -62,6 +63,7 @@ def load_df(filename="terms.csv"):
             "term": str,
             "definition": str,
             "list_number": int,
+            "list_term_number": int,
             "term_type": str,
             "latest_results": str,
             "tested_count": int,
@@ -72,7 +74,7 @@ def load_df(filename="terms.csv"):
     return df
 
 
-def load_new_terms(df, directory=".", filename="terms.csv"):
+def load_new_lists(df, directory=".", filename="terms.csv"):
     """
     Walks through the given directory, extracts term-definition pairs from .txt files,
     and adds any new terms to the DataFrame.
@@ -93,13 +95,12 @@ def load_new_terms(df, directory=".", filename="terms.csv"):
 
         return term_type, list_number
 
-    print("Searching for new terms.")
+    print("Searching for new lists.")
     new_entries = []
 
     highest_id = df["unique_id"].max() if not df.empty else 0
 
-    existing_terms = set(df["term"])  # Get existing terms for quick lookup
-    existing_definitions = set(df["definition"])
+    existing_lists = set(df["list_number"])  # Get existing terms for quick lookup
 
     txt_files = [
         os.path.join(root, file)
@@ -110,33 +111,36 @@ def load_new_terms(df, directory=".", filename="terms.csv"):
 
     # Use tqdm to track progress over files
     for file_path in tqdm(txt_files, desc="Processing text files"):
+        term_type, list_number = get_file_info(os.path.basename(file_path))
+
+        if list_number in existing_lists:
+            continue
+
         with open(file_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
-
-        term_type, list_number = get_file_info(os.path.basename(file_path))
 
         # Extract term-definition pairs (every two lines)
         for i in range(0, len(lines) - 1, 2):
             term = lines[i].strip()
             definition = lines[i + 1].strip()
 
-            # Only add new terms
-            if term not in existing_terms and definition not in existing_definitions:
-                new_entries.append(
-                    {
-                        "unique_id": highest_id + 1,
-                        "learnt_score": 0.0,
-                        "term": term,
-                        "definition": definition,
-                        "list_number": list_number,
-                        "term_type": term_type,
-                        "date_last_tested": pd.NaT,
-                        "latest_results": BLANK_RESULTS_STRING,
-                        "tested_count": 0,
-                    }
-                )
-                highest_id += 1
-                existing_terms.add(term)  # Avoid duplicates within this run
+            new_entries.append(
+                {
+                    "unique_id": highest_id + 1,
+                    "learnt_score": 0.0,
+                    "term": term,
+                    "definition": definition,
+                    "list_number": list_number,
+                    "list_term_number": i // 2,
+                    "term_type": term_type,
+                    "date_last_tested": pd.NaT,
+                    "latest_results": BLANK_RESULTS_STRING,
+                    "tested_count": 0,
+                }
+            )
+            highest_id += 1
+
+        existing_lists.add(list_number)  # Avoid duplicates within this run
 
     # Append new data and save if there are new entries
     if new_entries:
@@ -144,6 +148,6 @@ def load_new_terms(df, directory=".", filename="terms.csv"):
         save_df(df)  # Save the updated DataFrame
         print(f"Added {len(new_entries)} new terms to {filename}.")
     else:
-        print("No new terms found.")
+        print("No new lists found.")
 
     return df
