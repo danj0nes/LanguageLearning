@@ -51,7 +51,7 @@ def load_df(filename="terms.csv"):
     Loads a CSV file and converts it back to a Pandas DataFrame.
     """
     if not os.path.exists(filename):
-        print("terms.json not found.")
+        print("File not found. Creating empty dataframe...")
         return create_term_df()
 
     df = pd.read_csv(

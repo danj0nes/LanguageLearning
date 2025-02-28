@@ -12,6 +12,8 @@ WEIGHT_TESTED = 1
 TESTED_MAX_CAP = 15
 TESTED_CAP_WEIGHTING = 0.9
 
+LATEST_RESULTS_LENGTH = 10
+
 # terminal colour codes
 RED = "\033[31m"
 GREEN = "\033[32m"
@@ -29,7 +31,7 @@ class ReturnCode(Enum):
     REVERSE = 4
 
 
-def calc_learnt_score(df, unique_ids=None) -> pd.DataFrame:
+def calc_learnt_score(df, unique_ids=None, verbose: bool = False) -> pd.DataFrame:
     """
     Recalculates the learnt_score for each row in the DataFrame.
 
@@ -50,10 +52,8 @@ def calc_learnt_score(df, unique_ids=None) -> pd.DataFrame:
     # Select rows to update
     if unique_ids:
         rows_to_update = df[df["unique_id"].isin(unique_ids)].index
-        use_tqdm = False  # No progress bar for specific IDs
     else:
         rows_to_update = df.index
-        use_tqdm = True  # Use progress bar when updating all rows
 
     # Get the min and max for days_since_last_test and tested_count columns
     max_days = (today_date - df["date_last_tested"].min()).days
@@ -61,7 +61,7 @@ def calc_learnt_score(df, unique_ids=None) -> pd.DataFrame:
     max_tested_count = df["tested_count"].max()
 
     # Update learnt_score
-    for i in tqdm(rows_to_update, desc="Updating learnt scores", disable=not use_tqdm):
+    for i in tqdm(rows_to_update, desc="Updating learnt scores", disable=not verbose):
         row = df.loc[i]
 
         # Skip calculation if tested_count == 0
@@ -110,7 +110,7 @@ def calc_learnt_score(df, unique_ids=None) -> pd.DataFrame:
             + (WEIGHT_TESTED * tested_count_normalized)
         ) / (WEIGHT_DAYS_SINCE + WEIGHT_CORRECT + WEIGHT_TESTED)
 
-    if not unique_ids:
+    if not verbose:
         print("Learnt scores updated.")
 
     return sort_df(df)
@@ -122,91 +122,49 @@ def sort_df(df):
     )
 
 
-def save_result(df, recent: list, repeat_incorrect_ids: list) -> pd.DataFrame:
+def save_result(
+    df, recent: list, repeat_incorrect_ids: list, quiting: bool = False
+) -> pd.DataFrame:
     recalc_all = False
 
-    if not recent:
+    if quiting:
+        for repeat_incorrect_id in repeat_incorrect_ids:
+            recent.append((repeat_incorrect_id, False, True))
+
+    if not recent:  # if recent empty or None
         return df
 
     for id, isCorrect, repeat_incorrect in recent:
-        if isCorrect:
-            # if max tested_count is broken then recalc ~all learnt scores
+        if isCorrect or quiting:
+            # if max tested_count will be broken then recalc ~all learnt scores
             if (
                 not recalc_all
                 and df.loc[df["unique_id"] == id, "tested_count"].values[0]
-                == df["unique_id"].max()
+                == df["tested_count"].max()
             ):
                 recalc_all = True
 
-            # update stats for term with result
+            # update date_last_test
             df.loc[df["unique_id"] == id, "date_last_tested"] = today_date
+            # update lastest_results
             latest_results = df.loc[df["unique_id"] == id, "latest_results"].values[0]
             if latest_results != BLANK_RESULTS_STRING:
                 latest_results = ("X" if repeat_incorrect else "O") + (
-                    latest_results if len(latest_results) < 10 else latest_results[:-1]
+                    latest_results
+                    if len(latest_results) < LATEST_RESULTS_LENGTH
+                    else latest_results[:-1]
                 )
             else:
                 latest_results = "X" if repeat_incorrect else "O"
             df.loc[df["unique_id"] == id, "latest_results"] = latest_results
+            # update tested_count
             df.loc[df["unique_id"] == id, "tested_count"] += 1
-            # end of update stats
         else:
             repeat_incorrect_ids.append(id)
 
     return calc_learnt_score(
         df, None if recalc_all else [result[0] for result in recent]
     )
-
-
-def get_keypress(
-    recent: list,
-    correct: int,
-    incorrect: int,
-    term: dict,
-):
-    showing_term = True
-    while True:
-        event = keyboard.read_event(suppress=True)
-        # Detect only key releases (not pressess/holds)
-        # this is here to
-        if event.event_type != keyboard.KEY_UP:
-            continue
-
-        id = term["id"]
-        action = None
-
-        if event.name == "left":
-            recent.append((id, False, term["repeat_incorrect"]))
-            incorrect += 1
-            action = ReturnCode.CONTINUE
-
-        elif event.name == "right":
-            recent.append((id, True, term["repeat_incorrect"]))
-            correct += 1
-            action = ReturnCode.CONTINUE
-
-        elif event.name == "down":
-            print("\033[A\033[K", end="")  # Move up and clear the line
-            text = term["definition"] if showing_term else term["term"]
-            print(f"{YELLOW if term['repeat_incorrect'] else ''}{text:^32}{RESET}")
-            showing_term = not showing_term
-            continue  # Skip return
-
-        elif event.name == "up" and recent:
-            if recent[-1][1]:  # if got prev term correct
-                correct -= 1
-            else:
-                incorrect -= 1
-            action = ReturnCode.REVERSE
-
-        elif event.name == "q":
-            action = ReturnCode.QUIT
-
-        elif event.name == "s":
-            action = ReturnCode.SAVE
-
-        if action:
-            return recent, correct, incorrect, action
 
 
 def get_top(
@@ -228,7 +186,7 @@ def get_top(
 
     if future_terms:
         id, repeat_incorrect = (
-            future_terms.pop() if not reversing else recent.pop()[:3:2]
+            future_terms.pop(0) if not reversing else recent.pop()[:3:2]
         )
         return recent, future_terms, term_data(id, repeat_incorrect)
 
@@ -240,7 +198,58 @@ def get_top(
         if id not in avoid_ids:
             return recent, future_terms, term_data(id, False)
 
-    return recent, None, None  # No valid row found
+    return recent, future_terms, None  # No valid row found
+
+
+def get_keypress(
+    recent: list,
+    correct: int,
+    incorrect: int,
+    term: dict,
+):
+    showing_term = True
+    id = term["id"]
+    while True:
+        event = keyboard.read_event(suppress=True)
+
+        # Detect only key releases (not pressess/holds)
+        if event.event_type != keyboard.KEY_UP:
+            continue
+
+        action = None
+
+        if event.name == "left":
+            recent.append((id, False, term["repeat_incorrect"]))
+            incorrect += 1
+            action = ReturnCode.CONTINUE
+
+        elif event.name == "right":
+            recent.append((id, True, term["repeat_incorrect"]))
+            correct += 1
+            action = ReturnCode.CONTINUE
+
+        elif event.name == "down":
+            print("\033[A\033[K", end="")  # Move up and clear the line
+            text = term["definition"] if showing_term else term["term"]
+            print(f"{YELLOW if term['repeat_incorrect'] else ''}{text:^32}{RESET}")
+            showing_term = not showing_term
+            continue  # Skip return
+
+        elif event.name == "up" and recent:
+            if recent[-1][1]:  # if last tested term was correct
+                correct -= 1
+            else:
+                incorrect -= 1
+            action = ReturnCode.REVERSE
+
+        elif event.name == "q":
+            action = ReturnCode.QUIT
+
+        elif event.name == "s":
+            action = ReturnCode.SAVE
+
+        if action:
+            return recent, correct, incorrect, action
 
 
 def learn(df, allow_repeats_after: int = 9):
@@ -250,7 +259,7 @@ def learn(df, allow_repeats_after: int = 9):
     correct = 0
     incorrect = 0
 
-    recent_length = min(df.shape[0], allow_repeats_after)
+    recent_length = min(df.shape[0] - 1, allow_repeats_after)
     reversing = False
 
     print("line 1")
@@ -259,17 +268,23 @@ def learn(df, allow_repeats_after: int = 9):
     while True:
         # get next term to learn
         recent, future_terms, top_term = get_top(
-            df, recent, repeat_incorrect_ids, future_terms, reversing
+            df=df,
+            recent=recent,
+            repeat_incorrect_ids=repeat_incorrect_ids,
+            future_terms=future_terms,
+            reversing=reversing,
         )
-
-        reversing = False
 
         if not top_term:
             print("No terms to learn...")
             break
 
-        print("\033[A\033[K", end="")  # Move up and clear the line
-        print("\033[A\033[K", end="")
+        reversing = False
+        print(recent)
+        print(top_term["id"])
+        print(future_terms)
+        # print("\033[A\033[K", end="")  # Move up and clear the line
+        # print("\033[A\033[K", end="")
         print(
             f"{RED}{incorrect:>{3}}{RESET}{'':4}{BLUE}learnt score: {int(top_term['learnt_score'] * 100)}%{RESET}{'':4}{GREEN}{correct}{RESET}"
         )
@@ -278,7 +293,7 @@ def learn(df, allow_repeats_after: int = 9):
         )
 
         recent, correct, incorrect, returnCode = get_keypress(
-            recent, correct, incorrect, top_term
+            recent=recent, correct=correct, incorrect=incorrect, term=top_term
         )
 
         if returnCode == ReturnCode.CONTINUE:
@@ -287,27 +302,29 @@ def learn(df, allow_repeats_after: int = 9):
                 recent.pop(0)
 
         elif returnCode == ReturnCode.REVERSE:
-            future_terms.append((top_term["id"], top_term["repeat_incorrect"]))
+            future_terms.insert(0, (top_term["id"], top_term["repeat_incorrect"]))
             reversing = True
 
         elif returnCode == ReturnCode.QUIT:
             print("Exiting...")
+            if top_term["repeat_incorrect"]:
+                repeat_incorrect_ids.insert(0, top_term["id"])
             break
 
         elif returnCode == ReturnCode.SAVE:
             df = save_result(df, recent, repeat_incorrect_ids)
             save_df(df, verbose=False)
-            future_terms.append((top_term["id"], top_term["repeat_incorrect"]))
+            future_terms.insert(0, (top_term["id"], top_term["repeat_incorrect"]))
             recent = []
             correct = 0
             incorrect = 0
 
-    df = save_result(df, recent, repeat_incorrect_ids)
+    df = save_result(df, recent, repeat_incorrect_ids, quiting=True)
     save_df(df)
 
 
 terms = load_df()
 
-updated_terms = calc_learnt_score(df=load_new_lists(terms))
+updated_terms = calc_learnt_score(df=load_new_lists(terms), verbose=True)
 
 learn(df=updated_terms)
