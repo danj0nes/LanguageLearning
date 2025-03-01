@@ -13,13 +13,13 @@ BRACKET_NUMBER_PATTERN = re.compile(r"\[(\d+)\]")
 TERM_TYPES = ["verbe", "mot", "nom", "adjectif", "phrase"]
 
 
-def create_term_df():
+def create_term_df() -> pd.DataFrame:
     """
     Creates a Pandas DataFrame with specified columns and data types.
     """
     data = {
         "unique_id": pd.Series(dtype="int64"),  # Whole number
-        "learnt_score": pd.Series(dtype="float"),  # Decimal number
+        "learnt_score": pd.Series(dtype="float64"),  # Decimal number
         "term": pd.Series(dtype="string"),  # String
         "definition": pd.Series(dtype="string"),  # String
         "list_number": pd.Series(dtype="int64"),  # Whole number
@@ -34,28 +34,28 @@ def create_term_df():
     return df
 
 
-def save_df(df: pd.DataFrame, filename: str = "terms.csv", verbose: bool = True):
+def save_df(df: pd.DataFrame, file: str, verbose: bool = True):
     """
     Saves a DataFrame as a CSV file.
 
     index=False stops the index of the df being written in file.
     """
-    df.to_csv(filename, index=False)
+    df.to_csv(file, index=False)
 
     if verbose:
-        print(f"Data saved to {filename}")
+        print(f"Data saved to {os.path.basename(file)}")
 
 
-def load_df(filename="terms.csv"):
+def load_df(file: str) -> pd.DataFrame:
     """
     Loads a CSV file and converts it back to a Pandas DataFrame.
     """
-    if not os.path.exists(filename):
+    if not os.path.exists(file):
         print("File not found. Creating empty dataframe...")
         return create_term_df()
 
     df = pd.read_csv(
-        filename,
+        file,
         parse_dates=["date_last_tested"],
         dtype={
             "unique_id": int,
@@ -70,11 +70,11 @@ def load_df(filename="terms.csv"):
         },
     )
     # df["date_last_tested"] = pd.to_datetime(df["date_last_tested"], errors="coerce")
-    print(f"Data loaded from {filename}")
+    print(f"Data loaded from {os.path.basename(file)}")
     return df
 
 
-def load_new_lists(df, directory=".", filename="terms.csv"):
+def load_new_lists(df: pd.DataFrame, file: str):
     """
     Walks through the given directory, extracts term-definition pairs from .txt files,
     and adds any new terms to the DataFrame.
@@ -97,6 +97,7 @@ def load_new_lists(df, directory=".", filename="terms.csv"):
 
     print("Searching for new lists.")
     new_entries = []
+    directory = os.path.dirname(file)
 
     highest_id = df["unique_id"].max() if not df.empty else 0
 
@@ -146,7 +147,7 @@ def load_new_lists(df, directory=".", filename="terms.csv"):
     if new_entries:
         df = pd.concat([df, pd.DataFrame(new_entries)], ignore_index=True)
         save_df(df)  # Save the updated DataFrame
-        print(f"Added {len(new_entries)} new terms to {filename}.")
+        print(f"Added {len(new_entries)} new terms to {os.path.basename(file)}.")
     else:
         print("No new lists found.")
 

@@ -110,7 +110,7 @@ def calc_learnt_score(df, unique_ids=None, verbose: bool = False) -> pd.DataFram
             + (WEIGHT_TESTED * tested_count_normalized)
         ) / (WEIGHT_DAYS_SINCE + WEIGHT_CORRECT + WEIGHT_TESTED)
 
-    if not verbose:
+    if verbose:
         print("Learnt scores updated.")
 
     return sort_df(df)
@@ -220,12 +220,14 @@ def get_keypress(
 
         if event.name == "left":
             recent.append((id, False, term["repeat_incorrect"]))
-            incorrect += 1
+            if not term["repeat_incorrect"]:
+                incorrect += 1
             action = ReturnCode.CONTINUE
 
         elif event.name == "right":
             recent.append((id, True, term["repeat_incorrect"]))
-            correct += 1
+            if not term["repeat_incorrect"]:
+                correct += 1
             action = ReturnCode.CONTINUE
 
         elif event.name == "down":
@@ -236,10 +238,11 @@ def get_keypress(
             continue  # Skip return
 
         elif event.name == "up" and recent:
-            if recent[-1][1]:  # if last tested term was correct
-                correct -= 1
-            else:
-                incorrect -= 1
+            if not recent[-1][2]:  # if last tested term was repeat incorrect
+                if recent[-1][1]:  # if last tested term was correct
+                    correct -= 1
+                else:
+                    incorrect -= 1
             action = ReturnCode.REVERSE
 
         elif event.name == "q":
@@ -252,7 +255,7 @@ def get_keypress(
             return recent, correct, incorrect, action
 
 
-def learn(df, allow_repeats_after: int = 9):
+def learn(df: pd.DataFrame, file: str, allow_repeats_after: int = 9):
     recent = []
     future_terms = []
     repeat_incorrect_ids = []
@@ -280,11 +283,9 @@ def learn(df, allow_repeats_after: int = 9):
             break
 
         reversing = False
-        print(recent)
-        print(top_term["id"])
-        print(future_terms)
-        # print("\033[A\033[K", end="")  # Move up and clear the line
-        # print("\033[A\033[K", end="")
+
+        print("\033[A\033[K", end="")  # Move up and clear the line
+        print("\033[A\033[K", end="")
         print(
             f"{RED}{incorrect:>{3}}{RESET}{'':4}{BLUE}learnt score: {int(top_term['learnt_score'] * 100)}%{RESET}{'':4}{GREEN}{correct}{RESET}"
         )
@@ -313,18 +314,27 @@ def learn(df, allow_repeats_after: int = 9):
 
         elif returnCode == ReturnCode.SAVE:
             df = save_result(df, recent, repeat_incorrect_ids)
-            save_df(df, verbose=False)
+            save_df(df=df, file=file, verbose=False)
             future_terms.insert(0, (top_term["id"], top_term["repeat_incorrect"]))
             recent = []
             correct = 0
             incorrect = 0
 
     df = save_result(df, recent, repeat_incorrect_ids, quiting=True)
-    save_df(df)
+    save_df(df=df, file=file)
 
 
-terms = load_df()
+def main():
+    file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "terms.csv")
 
-updated_terms = calc_learnt_score(df=load_new_lists(terms), verbose=True)
+    terms = load_df(file=file)
 
-learn(df=updated_terms)
+    updated_terms = calc_learnt_score(
+        df=load_new_lists(df=terms, file=file), verbose=True
+    )
+
+    learn(df=updated_terms, file=file)
+
+
+if __name__ == "__main__":
+    main()
