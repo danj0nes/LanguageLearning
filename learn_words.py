@@ -14,6 +14,9 @@ TESTED_CAP_WEIGHTING = 0.9
 
 LATEST_RESULTS_LENGTH = 10
 
+DESIRED_TERMS_TYPES = ["verbe", "mot", "nom", "adjectif", "phrase"]
+ALLOW_REPEATS_AFTER = 9
+
 # terminal colour codes
 RED = "\033[31m"
 GREEN = "\033[32m"
@@ -76,8 +79,8 @@ def calc_learnt_score(df, unique_ids=None, verbose: bool = False) -> pd.DataFram
 
         # Calculate percentage correct
         if row["latest_results"] != BLANK_RESULTS_STRING:
-            correct_percentage = row["latest_results"].count("O") / len(
-                row["latest_results"]
+            correct_percentage = row["latest_results"].count("O") / max(
+                LATEST_RESULTS_LENGTH, len(row["latest_results"])
             )
         else:
             correct_percentage = 0
@@ -104,11 +107,15 @@ def calc_learnt_score(df, unique_ids=None, verbose: bool = False) -> pd.DataFram
         tested_count_normalized = lower_piece + upper_piece
 
         # Compute new learnt_score
-        df.at[i, "learnt_score"] = (
-            (WEIGHT_DAYS_SINCE * days_since_last_test_normalized)
-            + (WEIGHT_CORRECT * correct_percentage)
-            + (WEIGHT_TESTED * tested_count_normalized)
-        ) / (WEIGHT_DAYS_SINCE + WEIGHT_CORRECT + WEIGHT_TESTED)
+        df.at[i, "learnt_score"] = round(
+            (
+                (WEIGHT_DAYS_SINCE * days_since_last_test_normalized)
+                + (WEIGHT_CORRECT * correct_percentage)
+                + (WEIGHT_TESTED * tested_count_normalized)
+            )
+            / (WEIGHT_DAYS_SINCE + WEIGHT_CORRECT + WEIGHT_TESTED),
+            3,
+        )
 
     if verbose:
         print("Learnt scores updated.")
@@ -116,9 +123,10 @@ def calc_learnt_score(df, unique_ids=None, verbose: bool = False) -> pd.DataFram
     return sort_df(df)
 
 
-def sort_df(df):
-    return df.sort_values(
-        by=["learnt_score", "unique_id"], ascending=[True, True], ignore_index=True
+def sort_df(df: pd.DataFrame):
+    shuffled_df = df.sample(frac=1).reset_index(drop=True)
+    return shuffled_df.sort_values(
+        by=["learnt_score"], ascending=[True], ignore_index=True
     )
 
 
@@ -175,12 +183,16 @@ def get_top(
     reversing: bool,
 ):
 
-    df = df.set_index("unique_id", drop=False)  # Optimize lookup
+    temp_df = df.set_index("unique_id", drop=False)  # Optimize lookup
+    temp_df = temp_df[
+        temp_df["term_type"].isin(DESIRED_TERMS_TYPES)
+    ]  # Only pick from desired types
+
     term_data = lambda id, repeat: {
         "id": id,
-        "term": df.at[id, "term"],
-        "definition": df.at[id, "definition"],
-        "learnt_score": df.at[id, "learnt_score"],
+        "term": temp_df.at[id, "term"],
+        "definition": temp_df.at[id, "definition"],
+        "learnt_score": temp_df.at[id, "learnt_score"],
         "repeat_incorrect": repeat,
     }
 
@@ -194,7 +206,7 @@ def get_top(
         return recent, future_terms, term_data(repeat_incorrect_ids.pop(0), True)
 
     avoid_ids = {entry[0] for entry in recent}
-    for id, _ in df.iterrows():
+    for id, _ in temp_df.iterrows():
         if id not in avoid_ids:
             return recent, future_terms, term_data(id, False)
 
@@ -255,14 +267,14 @@ def get_keypress(
             return recent, correct, incorrect, action
 
 
-def learn(df: pd.DataFrame, file: str, allow_repeats_after: int = 9):
+def learn(df: pd.DataFrame, file: str):
     recent = []
     future_terms = []
     repeat_incorrect_ids = []
     correct = 0
     incorrect = 0
 
-    recent_length = min(df.shape[0] - 1, allow_repeats_after)
+    recent_length = min(df.shape[0] - 1, ALLOW_REPEATS_AFTER)
     reversing = False
 
     print("line 1")
