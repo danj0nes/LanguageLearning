@@ -1,5 +1,6 @@
 import pandas as pd
 from csv_util import *
+from util import *
 from tqdm import tqdm
 from datetime import datetime
 import keyboard
@@ -14,8 +15,10 @@ TESTED_CAP_WEIGHTING = 0.9
 
 LATEST_RESULTS_LENGTH = 10
 
-DESIRED_TERMS_TYPES = ["verbe", "mot", "nom", "adjectif", "phrase"]
+DESIRED_TERMS_TYPES = ["verbe", "mot", "nom", "adjectif", "phrase", "other"]
 ALLOW_REPEATS_AFTER = 9
+MIN_LIST_NUMBER = None
+MAX_LIST_NUMBER = None
 
 # terminal colour codes
 RED = "\033[31m"
@@ -184,9 +187,15 @@ def get_top(
 ):
 
     temp_df = df.set_index("unique_id", drop=False)  # Optimize lookup
+
+    # filtering df
     temp_df = temp_df[
         temp_df["term_type"].isin(DESIRED_TERMS_TYPES)
     ]  # Only pick from desired types
+    temp_df = temp_df[
+        (temp_df["list_number"] >= MIN_LIST_NUMBER)
+        & (temp_df["list_number"] <= MAX_LIST_NUMBER)
+    ]  # Only pick from lists between bounds
 
     term_data = lambda id, repeat: {
         "id": id,
@@ -343,6 +352,17 @@ def main():
 
     updated_terms = calc_learnt_score(
         df=load_new_lists(df=terms, file=file), verbose=True
+    )
+
+    lowest_list_number = updated_terms["list_number"].min()
+    highest_list_number = updated_terms["list_number"].max()
+    MIN_LIST_NUMBER, MAX_LIST_NUMBER = validate_int_bounds(
+        l_bound=MIN_LIST_NUMBER,
+        u_bound=MAX_LIST_NUMBER,
+        min_allowed=lowest_list_number,
+        max_allowed=highest_list_number,
+        l_default=lowest_list_number,
+        u_default=highest_list_number,
     )
 
     learn(df=updated_terms, file=file)
