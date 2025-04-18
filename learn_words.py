@@ -1,6 +1,6 @@
 import pandas as pd
 from csv_util import *
-from util import simple_validate_int_bound
+from util import validate_int_bound
 from tqdm import tqdm
 from datetime import datetime
 import keyboard
@@ -355,10 +355,11 @@ def main():
         df=load_new_lists(df=terms, file=file), verbose=True
     )
 
-    MIN_LIST_NUMBER = simple_validate_int_bound(
+    global MIN_LIST_NUMBER, MAX_LIST_NUMBER
+    MIN_LIST_NUMBER = validate_int_bound(
         MIN_LIST_NUMBER, updated_terms["list_number"].min(), "lower_bound"
     )
-    MAX_LIST_NUMBER = simple_validate_int_bound(
+    MAX_LIST_NUMBER = validate_int_bound(
         MAX_LIST_NUMBER, updated_terms["list_number"].max(), "upper_bound"
     )
 

@@ -143,7 +143,7 @@ def load_new_lists(df: pd.DataFrame, file: str):
     # Append new data and save if there are new entries
     if new_entries:
         df = pd.concat([df, pd.DataFrame(new_entries)], ignore_index=True)
-        save_df(df)  # Save the updated DataFrame
+        save_df(df=df, file=file)  # Save the updated DataFrame
         print(f"Added {len(new_entries)} new terms to {os.path.basename(file)}.")
     else:
         print("No new lists found.")
