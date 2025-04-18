@@ -34,3 +34,14 @@ def validate_int_bounds(
         return l_default, u_default
 
     return new_l_bound, new_u_bound
+
+
+def simple_validate_int_bound(bound, default: int, label: str = "bound"):
+    if bound is None:
+        return default
+
+    if not isinstance(bound, int):
+        print(f"Error: {label} is not an integer, using default.")
+        return default
+
+    return bound

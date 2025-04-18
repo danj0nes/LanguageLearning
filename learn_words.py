@@ -1,6 +1,6 @@
 import pandas as pd
 from csv_util import *
-from util import *
+from util import simple_validate_int_bound
 from tqdm import tqdm
 from datetime import datetime
 import keyboard
@@ -24,6 +24,7 @@ MAX_LIST_NUMBER = None
 RED = "\033[31m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
+
 BLUE = "\033[34m"
 RESET = "\033[0m"  # Reset to default color
 
@@ -354,15 +355,11 @@ def main():
         df=load_new_lists(df=terms, file=file), verbose=True
     )
 
-    lowest_list_number = updated_terms["list_number"].min()
-    highest_list_number = updated_terms["list_number"].max()
-    MIN_LIST_NUMBER, MAX_LIST_NUMBER = validate_int_bounds(
-        l_bound=MIN_LIST_NUMBER,
-        u_bound=MAX_LIST_NUMBER,
-        min_allowed=lowest_list_number,
-        max_allowed=highest_list_number,
-        l_default=lowest_list_number,
-        u_default=highest_list_number,
+    MIN_LIST_NUMBER = simple_validate_int_bound(
+        MIN_LIST_NUMBER, updated_terms["list_number"].min(), "lower_bound"
+    )
+    MAX_LIST_NUMBER = simple_validate_int_bound(
+        MAX_LIST_NUMBER, updated_terms["list_number"].max(), "upper_bound"
     )
 
     learn(df=updated_terms, file=file)

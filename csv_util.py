@@ -23,7 +23,6 @@ def create_term_df() -> pd.DataFrame:
         "term": pd.Series(dtype="string"),  # String
         "definition": pd.Series(dtype="string"),  # String
         "list_number": pd.Series(dtype="int64"),  # Whole number
-        "list_term_number": pd.Series(dtype="int64"),  # Whole number
         "term_type": pd.Series(dtype="string"),  # String
         "date_last_tested": pd.Series(dtype="datetime64[ns]"),  # Date
         "latest_results": pd.Series(dtype="string"),  # String
@@ -63,7 +62,6 @@ def load_df(file: str) -> pd.DataFrame:
             "term": str,
             "definition": str,
             "list_number": int,
-            "list_term_number": int,
             "term_type": str,
             "latest_results": str,
             "tested_count": int,
@@ -132,7 +130,6 @@ def load_new_lists(df: pd.DataFrame, file: str):
                     "term": term,
                     "definition": definition,
                     "list_number": list_number,
-                    "list_term_number": i // 2,
                     "term_type": term_type,
                     "date_last_tested": pd.NaT,
                     "latest_results": BLANK_RESULTS_STRING,
