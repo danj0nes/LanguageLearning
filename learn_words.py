@@ -43,7 +43,7 @@ def calc_learnt_score(df, unique_ids=None, verbose: bool = False) -> pd.DataFram
     Recalculates the learnt_score for each row in the DataFrame.
 
     If unique_ids are provided, only those rows will be updated.
-    If the latest date in 'date_last_tested' is today, the function returns the DataFrame without recalculating.
+    Terms with tested_count == 0 will not be updated
 
     Formula:
     learnt_score = WEIGHT_DAYS_SINCE * (1 - MIN_MAX(days_since_last_test)) + (WEIGHT_CORRECT * correct_percentage) + WEIGHT_TESTED * PIECEWISE_WEIGHTED_MIN_MAX(tested_count) / (WEIGHT_DAYS_SINCE + WEIGHT_CORRECT + WEIGHT_TESTED)
@@ -62,12 +62,11 @@ def calc_learnt_score(df, unique_ids=None, verbose: bool = False) -> pd.DataFram
     else:
         rows_to_update = df.index
 
-    # Get the min and max for days_since_last_test and tested_count columns
+    # Get the max for days_since_last_test and tested_count columns
     max_days = (today_date - df["date_last_tested"].min()).days
-
     max_tested_count = df["tested_count"].max()
 
-    # Update learnt_score
+    # Update learnt_score for each term
     for i in tqdm(rows_to_update, desc="Updating learnt scores", disable=not verbose):
         row = df.loc[i]
 
@@ -128,6 +127,10 @@ def calc_learnt_score(df, unique_ids=None, verbose: bool = False) -> pd.DataFram
 
 
 def sort_df(df: pd.DataFrame):
+    """
+    Shuffles dataframe then sorts via learnt_score.
+    Therefore, the of order of terms with same learnt score will be random.
+    """
     shuffled_df = df.sample(frac=1).reset_index(drop=True)
     return shuffled_df.sort_values(
         by=["learnt_score"], ascending=[True], ignore_index=True
@@ -141,8 +144,10 @@ def save_result(
     quiting: bool = False,
     recent_gap: int = None,
 ) -> pd.DataFrame:
+
     recalc_all = False
 
+    # if quiting, save results of all incorrect terms waiting to be repeated
     if quiting:
         for repeat_incorrect_id, _ in repeat_incorrect_ids:
             recent.append((repeat_incorrect_id, False, True))
@@ -162,6 +167,7 @@ def save_result(
 
             # update date_last_test
             df.loc[df["unique_id"] == id, "date_last_tested"] = today_date
+
             # update lastest_results
             latest_results = df.loc[df["unique_id"] == id, "latest_results"].values[0]
             if latest_results != BLANK_RESULTS_STRING:
@@ -173,9 +179,11 @@ def save_result(
             else:
                 latest_results = "X" if repeat_incorrect else "O"
             df.loc[df["unique_id"] == id, "latest_results"] = latest_results
+
             # update tested_count
             df.loc[df["unique_id"] == id, "tested_count"] += 1
         else:
+            # ensure when saving, incorrect terms are tested again with sufficient repeat after delay
             repeat_incorrect_ids.append((id, index + recent_gap))
 
     return calc_learnt_score(
@@ -217,22 +225,24 @@ def get_top(
             future_terms.pop(0) if not reversing else recent.pop()[:3:2]
         )
         data = term_data(id, repeat_incorrect)
+    else:
+        if repeat_incorrect_ids:
+            if repeat_incorrect_ids[0][1] == 0:
+                data = term_data(repeat_incorrect_ids.pop(0)[0], True)
 
-    elif repeat_incorrect_ids:
-        if repeat_incorrect_ids[0][1] == 0:
-            data = term_data(repeat_incorrect_ids.pop(0)[0], True)
+        # if no term has been chosen pick from df
+        if data is None:
+            avoid_ids = {entry[0] for entry in recent}
+            for id, _ in temp_df.iterrows():
+                if id not in avoid_ids:
+                    data = term_data(id, False)
+                    break
 
-    if data is None:
-        avoid_ids = {entry[0] for entry in recent}
-        for id, _ in temp_df.iterrows():
-            if id not in avoid_ids:
-                data = term_data(id, False)
-                break
-
-    if data is not None:
-        repeat_incorrect_ids = [
-            (x, y - 1 if y > 0 else y) for x, y in repeat_incorrect_ids
-        ]
+        # reduce repeat incorrect delay if given a brand new term
+        if data is not None:
+            repeat_incorrect_ids = [
+                (x, y - 1 if y > 0 else y) for x, y in repeat_incorrect_ids
+            ]
 
     return recent, repeat_incorrect_ids, future_terms, data
 
@@ -344,6 +354,7 @@ def learn(df: pd.DataFrame, file: str):
 
         elif returnCode == ReturnCode.QUIT:
             print("Exiting...")
+            # ensure that term on screen if gotten wrong is saved as gotten wrong
             if top_term["repeat_incorrect"]:
                 repeat_incorrect_ids.insert(0, (top_term["id"], 0))
             break
@@ -353,9 +364,11 @@ def learn(df: pd.DataFrame, file: str):
                 df,
                 recent,
                 repeat_incorrect_ids,
-                recent_gap=recent_length - len(recent) + 1,
-            )  # the +1 is for the repeated term that is added to future_terms
+                recent_gap=recent_length - len(recent),
+            )
             save_df(df=df, file=file, verbose=False)
+
+            # ensure than term on screen is chosen again
             future_terms.insert(0, (top_term["id"], top_term["repeat_incorrect"]))
             recent = []
             correct = 0
