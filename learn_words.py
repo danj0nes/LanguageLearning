@@ -16,7 +16,7 @@ TESTED_CAP_WEIGHTING = 0.9
 LATEST_RESULTS_LENGTH = 10
 
 DESIRED_TERMS_TYPES = ["verbe", "mot", "nom", "adjectif", "phrase", "other"]
-ALLOW_REPEATS_AFTER = 9
+ALLOW_REPEATS_AFTER = 15
 MIN_LIST_NUMBER = None
 MAX_LIST_NUMBER = None
 
@@ -135,18 +135,22 @@ def sort_df(df: pd.DataFrame):
 
 
 def save_result(
-    df, recent: list, repeat_incorrect_ids: list, quiting: bool = False
+    df,
+    recent: list,
+    repeat_incorrect_ids: list,
+    quiting: bool = False,
+    recent_gap: int = None,
 ) -> pd.DataFrame:
     recalc_all = False
 
     if quiting:
-        for repeat_incorrect_id in repeat_incorrect_ids:
+        for repeat_incorrect_id, _ in repeat_incorrect_ids:
             recent.append((repeat_incorrect_id, False, True))
 
     if not recent:  # if recent empty or None
         return df
 
-    for id, isCorrect, repeat_incorrect in recent:
+    for index, (id, isCorrect, repeat_incorrect) in enumerate(recent):
         if isCorrect or quiting:
             # if max tested_count will be broken then recalc ~all learnt scores
             if (
@@ -172,7 +176,7 @@ def save_result(
             # update tested_count
             df.loc[df["unique_id"] == id, "tested_count"] += 1
         else:
-            repeat_incorrect_ids.append(id)
+            repeat_incorrect_ids.append((id, index + recent_gap))
 
     return calc_learnt_score(
         df, None if recalc_all else [result[0] for result in recent]
@@ -206,21 +210,31 @@ def get_top(
         "repeat_incorrect": repeat,
     }
 
+    data = None
+
     if future_terms:
         id, repeat_incorrect = (
             future_terms.pop(0) if not reversing else recent.pop()[:3:2]
         )
-        return recent, future_terms, term_data(id, repeat_incorrect)
+        data = term_data(id, repeat_incorrect)
 
-    if repeat_incorrect_ids:
-        return recent, future_terms, term_data(repeat_incorrect_ids.pop(0), True)
+    elif repeat_incorrect_ids:
+        if repeat_incorrect_ids[0][1] == 0:
+            data = term_data(repeat_incorrect_ids.pop(0)[0], True)
 
-    avoid_ids = {entry[0] for entry in recent}
-    for id, _ in temp_df.iterrows():
-        if id not in avoid_ids:
-            return recent, future_terms, term_data(id, False)
+    if data is None:
+        avoid_ids = {entry[0] for entry in recent}
+        for id, _ in temp_df.iterrows():
+            if id not in avoid_ids:
+                data = term_data(id, False)
+                break
 
-    return recent, future_terms, None  # No valid row found
+    if data is not None:
+        repeat_incorrect_ids = [
+            (x, y - 1 if y > 0 else y) for x, y in repeat_incorrect_ids
+        ]
+
+    return recent, repeat_incorrect_ids, future_terms, data
 
 
 def get_keypress(
@@ -292,7 +306,7 @@ def learn(df: pd.DataFrame, file: str):
 
     while True:
         # get next term to learn
-        recent, future_terms, top_term = get_top(
+        recent, repeat_incorrect_ids, future_terms, top_term = get_top(
             df=df,
             recent=recent,
             repeat_incorrect_ids=repeat_incorrect_ids,
@@ -321,7 +335,7 @@ def learn(df: pd.DataFrame, file: str):
 
         if returnCode == ReturnCode.CONTINUE:
             if len(recent) > recent_length:
-                df = save_result(df, [recent[0]], repeat_incorrect_ids)
+                df = save_result(df, [recent[0]], repeat_incorrect_ids, recent_gap=0)
                 recent.pop(0)
 
         elif returnCode == ReturnCode.REVERSE:
@@ -331,11 +345,16 @@ def learn(df: pd.DataFrame, file: str):
         elif returnCode == ReturnCode.QUIT:
             print("Exiting...")
             if top_term["repeat_incorrect"]:
-                repeat_incorrect_ids.insert(0, top_term["id"])
+                repeat_incorrect_ids.insert(0, (top_term["id"], 0))
             break
 
         elif returnCode == ReturnCode.SAVE:
-            df = save_result(df, recent, repeat_incorrect_ids)
+            df = save_result(
+                df,
+                recent,
+                repeat_incorrect_ids,
+                recent_gap=recent_length - len(recent) + 1,
+            )  # the +1 is for the repeated term that is added to future_terms
             save_df(df=df, file=file, verbose=False)
             future_terms.insert(0, (top_term["id"], top_term["repeat_incorrect"]))
             recent = []
