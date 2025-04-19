@@ -6,13 +6,14 @@ from datetime import datetime
 import keyboard
 from enum import Enum
 
+# quit mode allowing you to repeat incorrect
+
 WEIGHT_DAYS_SINCE = 1
 WEIGHT_CORRECT = 1
 WEIGHT_TESTED = 1
 
 TESTED_MAX_CAP = 15
 TESTED_CAP_WEIGHTING = 0.9
-
 LATEST_RESULTS_LENGTH = 10
 
 DESIRED_TERMS_TYPES = ["verbe", "mot", "nom", "adjectif", "phrase", "other"]
@@ -26,6 +27,7 @@ GREEN = "\033[32m"
 YELLOW = "\033[33m"
 
 BLUE = "\033[34m"
+PURPLE = "\033[35m"
 RESET = "\033[0m"  # Reset to default color
 
 today_date = pd.to_datetime(datetime.today().date())
@@ -33,9 +35,10 @@ today_date = pd.to_datetime(datetime.today().date())
 
 class ReturnCode(Enum):
     QUIT = 1
-    SAVE = 2
-    CONTINUE = 3
-    REVERSE = 4
+    INSTANT_QUIT = 2
+    SAVE = 3
+    CONTINUE = 4
+    REVERSE = 5
 
 
 def calc_learnt_score(df, unique_ids=None, verbose: bool = False) -> pd.DataFrame:
@@ -141,14 +144,14 @@ def save_result(
     df,
     recent: list,
     repeat_incorrect_ids: list,
-    quiting: bool = False,
+    instant_quitting: bool = False,
     recent_gap: int = None,
 ) -> pd.DataFrame:
 
     recalc_all = False
 
-    # if quiting, save results of all incorrect terms waiting to be repeated
-    if quiting:
+    # if instant_quitting, save results of all incorrect terms waiting to be repeated
+    if instant_quitting:
         for repeat_incorrect_id, _ in repeat_incorrect_ids:
             recent.append((repeat_incorrect_id, False, True))
 
@@ -156,7 +159,7 @@ def save_result(
         return df
 
     for index, (id, isCorrect, repeat_incorrect) in enumerate(recent):
-        if isCorrect or quiting:
+        if isCorrect or instant_quitting:
             # if max tested_count will be broken then recalc ~all learnt scores
             if (
                 not recalc_all
@@ -196,7 +199,8 @@ def get_top(
     recent: list,
     repeat_incorrect_ids: list,
     future_terms: list,
-    reversing: bool,
+    reversing: bool = False,
+    quitting: bool = False,
 ):
 
     temp_df = df.set_index("unique_id", drop=False)  # Optimize lookup
@@ -227,11 +231,11 @@ def get_top(
         data = term_data(id, repeat_incorrect)
     else:
         if repeat_incorrect_ids:
-            if repeat_incorrect_ids[0][1] == 0:
+            if repeat_incorrect_ids[0][1] == 0 or quitting:
                 data = term_data(repeat_incorrect_ids.pop(0)[0], True)
 
         # if no term has been chosen pick from df
-        if data is None:
+        if data is None and not quitting:
             avoid_ids = {entry[0] for entry in recent}
             for id, _ in temp_df.iterrows():
                 if id not in avoid_ids:
@@ -294,6 +298,9 @@ def get_keypress(
         elif event.name == "q":
             action = ReturnCode.QUIT
 
+        elif event.name == "i":
+            action = ReturnCode.INSTANT_QUIT
+
         elif event.name == "s":
             action = ReturnCode.SAVE
 
@@ -310,6 +317,7 @@ def learn(df: pd.DataFrame, file: str):
 
     recent_length = min(df.shape[0] - 1, ALLOW_REPEATS_AFTER)
     reversing = False
+    quitting = False
 
     print("line 1")
     print("line 2")
@@ -322,6 +330,7 @@ def learn(df: pd.DataFrame, file: str):
             repeat_incorrect_ids=repeat_incorrect_ids,
             future_terms=future_terms,
             reversing=reversing,
+            quitting=quitting,
         )
 
         if not top_term:
@@ -333,7 +342,8 @@ def learn(df: pd.DataFrame, file: str):
         print("\033[A\033[K", end="")  # Move up and clear the line
         print("\033[A\033[K", end="")
         print(
-            f"{RED}{incorrect:>{3}}{RESET}{'':4}{BLUE}learnt score: {int(top_term['learnt_score'] * 100)}%{RESET}{'':4}{GREEN}{correct}{RESET}"
+            f"{RED}{incorrect:>{3}}{RESET}{'':4}{BLUE}learnt score: {int(top_term['learnt_score'] * 100)}%{RESET}{'':4}"
+            + f"{GREEN}{correct}{RESET}{'':4}{PURPLE}{'quitting' if quitting else ''}{RESET}"
         )
         print(
             f"{YELLOW if top_term['repeat_incorrect'] else ''}{top_term['term']:^32}{RESET}"
@@ -344,15 +354,34 @@ def learn(df: pd.DataFrame, file: str):
         )
 
         if returnCode == ReturnCode.CONTINUE:
-            if len(recent) > recent_length:
+            if len(recent) > recent_length or quitting:
                 df = save_result(df, [recent[0]], repeat_incorrect_ids, recent_gap=0)
                 recent.pop(0)
 
         elif returnCode == ReturnCode.REVERSE:
+            # ensure than term on screen is chosen again
             future_terms.insert(0, (top_term["id"], top_term["repeat_incorrect"]))
             reversing = True
 
         elif returnCode == ReturnCode.QUIT:
+            # ensure than term on screen is chosen again
+            if top_term["repeat_incorrect"]:
+                future_terms.insert(0, (top_term["id"], True))
+            quitting = True
+
+            # adds all incorrect terms to repeat_incorrect
+            df = save_result(
+                df,
+                recent,
+                repeat_incorrect_ids,
+                recent_gap=0,
+            )
+            save_df(df=df, file=file, verbose=False)
+            recent = []
+            correct = 0
+            incorrect = 0
+
+        elif returnCode == ReturnCode.INSTANT_QUIT:
             print("Exiting...")
             # ensure that term on screen if gotten wrong is saved as gotten wrong
             if top_term["repeat_incorrect"]:
@@ -374,7 +403,7 @@ def learn(df: pd.DataFrame, file: str):
             correct = 0
             incorrect = 0
 
-    df = save_result(df, recent, repeat_incorrect_ids, quiting=True)
+    df = save_result(df, recent, repeat_incorrect_ids, instant_quitting=True)
     save_df(df=df, file=file)
 
 
