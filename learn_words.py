@@ -23,7 +23,6 @@ MAX_LIST_NUMBER = None
 RED = "\033[31m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
-
 BLUE = "\033[34m"
 PURPLE = "\033[35m"
 RESET = "\033[0m"  # Reset to default color
@@ -75,11 +74,15 @@ def calc_learnt_score(df, unique_ids=None, verbose: bool = False) -> pd.DataFram
         if row["tested_count"] == 0:
             continue
 
-        # Calculate days since last tested
+        # Min-max normalize days_since_last_test
         if pd.notna(row["date_last_tested"]):
             days_since_last_test = (today_date - row["date_last_tested"]).days
+
+            days_since_last_test_normalized = min_max(
+                min=0, max=max_days, value=days_since_last_test, inverse=True
+            )
         else:
-            days_since_last_test = None
+            days_since_last_test_normalized = 0
 
         # Calculate percentage correct
         if row["latest_results"] != BLANK_RESULTS_STRING:
@@ -88,14 +91,6 @@ def calc_learnt_score(df, unique_ids=None, verbose: bool = False) -> pd.DataFram
             )
         else:
             correct_percentage = 0
-
-        # Min-max normalize days_since_last_test
-        if days_since_last_test != None:
-            days_since_last_test_normalized = min_max(
-                min=0, max=max_days, value=days_since_last_test, inverse=True
-            )
-        else:
-            days_since_last_test_normalized = 0
 
         # Piecewise weighted Min-max normalize tested_count
         lower_piece = (
@@ -118,7 +113,7 @@ def calc_learnt_score(df, unique_ids=None, verbose: bool = False) -> pd.DataFram
                 + (WEIGHT_TESTED * tested_count_normalized)
             )
             / (WEIGHT_DAYS_SINCE + WEIGHT_CORRECT + WEIGHT_TESTED),
-            3,
+            4,
         )
 
     if verbose:
@@ -143,7 +138,7 @@ def save_result(
     recent: list,
     repeat_incorrect_ids: list,
     terminating: bool = False,
-    recent_gap: int = None,
+    recent_gap: int = 0,
 ) -> pd.DataFrame:
 
     recalc_all = False
@@ -159,12 +154,13 @@ def save_result(
     for index, (id, isCorrect, repeat_incorrect) in enumerate(recent):
         if isCorrect or terminating:
             # if max tested_count will be broken then recalc ~all learnt scores
-            if (
-                not recalc_all
-                and df.loc[df["unique_id"] == id, "tested_count"].values[0]
-                == df["tested_count"].max()
-            ):
-                recalc_all = True
+            if not recalc_all:
+                tested_count = df.loc[df["unique_id"] == id, "tested_count"].values[0]
+                if (
+                    tested_count == df["tested_count"].max()
+                    and tested_count >= TESTED_MAX_CAP
+                ):
+                    recalc_all = True
 
             # update date_last_test
             df.loc[df["unique_id"] == id, "date_last_tested"] = today_date
@@ -232,7 +228,7 @@ def get_top(
     else:
         # 2. Pick from repeat incorrect
         if repeat_incorrect_ids:
-            if repeat_incorrect_ids[0][1] == 0:
+            if repeat_incorrect_ids[0][1] == 0 or quitting:
                 data = term_data(repeat_incorrect_ids.pop(0)[0], True)
 
         # 3. Pick from filtered df
@@ -335,7 +331,8 @@ def learn(df: pd.DataFrame, file: str):
         )
 
         if not top_term:
-            print("No terms to learn...")
+            if not quitting:
+                print("No terms to learn...")
             break
 
         reversing = False
@@ -355,40 +352,16 @@ def learn(df: pd.DataFrame, file: str):
         )
 
         if returnCode == ReturnCode.CONTINUE:
-            if len(recent) > recent_length and not quitting:
-                df = save_result(df, [recent[0]], repeat_incorrect_ids, recent_gap=0)
+            if len(recent) > recent_length or (
+                quitting and len(repeat_incorrect_ids) == 0 and len(future_terms) == 0
+            ):
+                df = save_result(df, [recent[0]], repeat_incorrect_ids)
                 recent.pop(0)
 
         elif returnCode == ReturnCode.REVERSE:
             # ensure than term on screen is chosen again
             future_terms.insert(0, (top_term["id"], top_term["repeat_incorrect"]))
             reversing = True
-
-        elif returnCode == ReturnCode.QUIT:
-            quitting = True
-
-            # adds all incorrect terms to repeat_incorrect
-            df = save_result(
-                df,
-                recent,
-                repeat_incorrect_ids,
-                recent_gap=0,
-            )
-            save_df(df=df, file=file, verbose=False)
-
-            # ensure than term on screen is chosen again
-            if top_term["repeat_incorrect"]:
-                future_terms.insert(0, (top_term["id"], True))
-            recent = []
-            correct = 0
-            incorrect = 0
-
-        elif returnCode == ReturnCode.TERMINATE:
-            print("Exiting...")
-            # ensure that term on screen if gotten wrong is saved as gotten wrong
-            if top_term["repeat_incorrect"]:
-                repeat_incorrect_ids.insert(0, (top_term["id"], 0))
-            break
 
         elif returnCode == ReturnCode.SAVE:
             df = save_result(
@@ -401,9 +374,40 @@ def learn(df: pd.DataFrame, file: str):
 
             # ensure than term on screen is chosen again
             future_terms.insert(0, (top_term["id"], top_term["repeat_incorrect"]))
+
             recent = []
             correct = 0
             incorrect = 0
+
+        elif returnCode == ReturnCode.QUIT:
+            quitting = True
+
+            # adds all incorrect terms to repeat_incorrect
+            df = save_result(df, recent, repeat_incorrect_ids)
+            save_df(df=df, file=file, verbose=False)
+
+            # keep only repeat incorrect terms of furture_terms
+            future_terms = [term for term in future_terms if term[1]]
+
+            # ensure than term on screen is chosen again
+            if top_term["repeat_incorrect"]:
+                future_terms.insert(0, (top_term["id"], True))
+
+            recent = []
+            correct = 0
+            incorrect = 0
+
+        elif returnCode == ReturnCode.TERMINATE:
+            print("Exiting...")
+            # ensure that term on screen if gotten wrong is saved as gotten wrong
+            if top_term["repeat_incorrect"]:
+                repeat_incorrect_ids.insert(0, (top_term["id"], 0))
+
+            # add all repeat incorrect terms in future_terms to repeat_incorrect_ids
+            repeat_incorrect_ids.extend(
+                [(term[0], 0) for term in future_terms if term[1]]
+            )
+            break
 
     df = save_result(df, recent, repeat_incorrect_ids, terminating=True)
     save_df(df=df, file=file)
