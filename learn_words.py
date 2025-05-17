@@ -278,8 +278,8 @@ def get_keypress(
             action = ReturnCode.CONTINUE
 
         elif event.name == "down":
-            print("\033[A\033[K", end="")  # Move up and clear the line
             text = term["definition"] if showing_term else term["term"]
+            print("\033[A\033[K", end="")  # Move up and clear the line
             print(f"{YELLOW if term['repeat_incorrect'] else ''}{text:^32}{RESET}")
             showing_term = not showing_term
             continue  # Skip return
