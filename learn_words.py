@@ -352,11 +352,13 @@ def learn(df: pd.DataFrame, file: str):
         )
 
         if returnCode == ReturnCode.CONTINUE:
-            if len(recent) > recent_length or (
-                quitting and len(repeat_incorrect_ids) == 0 and len(future_terms) == 0
-            ):
+            if len(recent) > recent_length:
                 df = save_result(df, [recent[0]], repeat_incorrect_ids)
                 recent.pop(0)
+            elif quitting and len(future_terms) == 0:
+                while len(repeat_incorrect_ids) == 0 and len(recent) > 0:
+                    df = save_result(df, [recent[0]], repeat_incorrect_ids)
+                    recent.pop(0)
 
         elif returnCode == ReturnCode.REVERSE:
             # ensure than term on screen is chosen again
