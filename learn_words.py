@@ -13,6 +13,7 @@ WEIGHT_TESTED = 1
 TESTED_MAX_CAP = 15
 TESTED_CAP_WEIGHTING = 0.9
 LATEST_RESULTS_LENGTH = 10
+DAYS_SINCE_MIN_CAP = 30
 
 DESIRED_TERMS_TYPES = ["verbe", "mot", "nom", "adjectif", "phrase", "other"]
 ALLOW_REPEATS_AFTER = 15
@@ -63,7 +64,7 @@ def calc_learnt_score(df, unique_ids=None, verbose: bool = False) -> pd.DataFram
         rows_to_update = df.index
 
     # Get the max for days_since_last_test and tested_count columns
-    max_days = (today_date - df["date_last_tested"].min()).days
+    max_days = max(DAYS_SINCE_MIN_CAP, (today_date - df["date_last_tested"].min()).days)
     max_tested_count = df["tested_count"].max()
 
     # Update learnt_score for each term
