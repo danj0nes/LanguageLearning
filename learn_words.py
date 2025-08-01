@@ -50,7 +50,7 @@ def calc_learnt_score(df, unique_ids=None, verbose: bool = False) -> pd.DataFram
     learnt_score = WEIGHT_DAYS_SINCE * (1 - MIN_MAX(days_since_last_test)) + (WEIGHT_CORRECT * correct_percentage) + WEIGHT_TESTED * PIECEWISE_WEIGHTED_MIN_MAX(tested_count) / (WEIGHT_DAYS_SINCE + WEIGHT_CORRECT + WEIGHT_TESTED)
     """
 
-    def min_max(min: float, max=float, value=float, inverse: bool = False) -> float:
+    def min_max(min: float, max: float, value: float, inverse: bool = False) -> float:
         if max > min:
             result = (value - min) / (max - min)
             return (1 - result) if inverse else result
@@ -234,7 +234,9 @@ def get_top(
 
         # 3. Pick from filtered df
         if data is None and not quitting:
-            avoid_ids = {entry[0] for entry in recent}
+            avoid_ids = avoid_ids = {entry[0] for entry in recent} | {
+                ids[0] for ids in repeat_incorrect_ids
+            }
             for id, _ in temp_df.iterrows():
                 if id not in avoid_ids:
                     data = term_data(id, False)
@@ -389,7 +391,7 @@ def learn(df: pd.DataFrame, file: str):
             df = save_result(df, recent, repeat_incorrect_ids)
             save_df(df=df, file=file, verbose=False)
 
-            # keep only repeat incorrect terms of furture_terms
+            # keep only repeat incorrect terms of future_terms
             future_terms = [term for term in future_terms if term[1]]
 
             # ensure than term on screen is chosen again
