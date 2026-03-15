@@ -3,11 +3,10 @@ import pandas as pd
 from tqdm import tqdm
 from dotenv import load_dotenv
 import time, os
-import requests
 
 # ================= CONFIG =================
-CSV_FILE = "Top_10.csv"
-OUTPUT_FILE = "Top_10_New.csv"
+CSV_FILE = "All_Terms.csv"
+OUTPUT_FILE = "All_Terms_New.csv"
 
 FRENCH_COL = "TERM"
 EN_COL = "DEFINITION"
@@ -18,15 +17,15 @@ EXAMPLE_EN_COLS = ["EXAMPLE_EN_1", "EXAMPLE_EN_2", "EXAMPLE_EN_3"]
 
 PROMPT = (
     "Write 3 short French sentences to help learn '{}' meaning '{}'. "
-    "Use natural and varied grammar around the term. "
-    "Return only the sentences separated by newline."
+    "Use natural and varied grammar around the term."
+    "For each sentence provide the English translation."
+    "Return exactly 3 lines formatted like:\n"
+    "French sentence | English translation"
 )
 
-MODEL = "grok-3-mini"
+MODEL = "grok-4-fast-non-reasoning"
 
-TRANSLATE_URL = "http://127.0.0.1:5000/translate"
-
-SAVE_INTERVAL = 50
+SAVE_INTERVAL = 10
 # =========================================
 
 load_dotenv("api.env")
@@ -35,8 +34,6 @@ client = OpenAI(
     api_key=os.getenv("API_KEY"),
     base_url="https://api.x.ai/v1",
 )
-
-session = requests.Session()
 
 df = pd.read_csv(CSV_FILE)
 
@@ -79,46 +76,34 @@ for idx, row in tqdm(rows_to_generate.iterrows(), total=rows_to_generate.shape[0
             )
         )
 
-        french_text = completion.choices[0].message.content.strip()
+        response_text = completion.choices[0].message.content.strip()
 
-        sentences = [s.strip() for s in french_text.split("\n") if s.strip()]
+        lines = [l.strip() for l in response_text.split("\n") if l.strip()]
 
-        while len(sentences) < 3:
-            sentences.append("")
+        fr_sentences = []
+        en_sentences = []
 
-        sentences = sentences[:3]
+        for line in lines:
+            if "|" in line:
+                fr, en = line.split("|", 1)
+                fr_sentences.append(fr.strip())
+                en_sentences.append(en.strip())
 
-        translations = []
+        while len(fr_sentences) < 3:
+            fr_sentences.append("")
+            en_sentences.append("")
 
-        for sentence in sentences:
+        fr_sentences = fr_sentences[:3]
+        en_sentences = en_sentences[:3]
 
-            r = session.post(
-                url=TRANSLATE_URL,
-                json={
-                    "q": sentence,
-                    "source": "fr",
-                    "target": "en",
-                    "format": "text",
-                },
-                timeout=10,
-            )
-
-            if r.status_code == 200:
-                translations.append(r.json()["translatedText"])
-            else:
-                print("Translation failed:", r.text)
-                translations.append("")
-
-        for i in range(len(sentences)):
-            df.at[idx, EXAMPLE_FR_COLS[i]] = sentences[i]
-            df.at[idx, EXAMPLE_EN_COLS[i]] = translations[i]
+        for i in range(3):
+            df.at[idx, EXAMPLE_FR_COLS[i]] = fr_sentences[i]
+            df.at[idx, EXAMPLE_EN_COLS[i]] = en_sentences[i]
 
         count += 1
 
         if count % SAVE_INTERVAL == 0:
             df.to_csv(OUTPUT_FILE, index=False)
-
-        time.sleep(0.1)
 
     except Exception as e:
         print("Error:", e)
