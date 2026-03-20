@@ -5,25 +5,22 @@ from dotenv import load_dotenv
 import time, os
 
 # ================= CONFIG =================
-CSV_FILE = "All_Terms.csv"
-OUTPUT_FILE = "All_Terms_New.csv"
+CSV_FILE = "All_Terms_2.csv"
+OUTPUT_FILE = "All_Terms_New_3.csv"
 
 FRENCH_COL = "TERM"
 EN_COL = "DEFINITION"
 TERM_TYPE_COL = "TERM_TYPE"
 
-EXAMPLE_FR_COLS = ["EXAMPLE_1", "EXAMPLE_2", "EXAMPLE_3"]
-EXAMPLE_EN_COLS = ["EXAMPLE_EN_1", "EXAMPLE_EN_2", "EXAMPLE_EN_3"]
+IPA_COL = "IPA"
 
 PROMPT = (
-    "Write 3 short French sentences to help learn '{}' meaning '{}'. "
-    "Use natural and varied grammar around the term. "
-    "For each sentence provide the English translation. "
-    "Return exactly 3 lines formatted like:\n"
-    "French sentence | English translation"
+    "Write the IPA pronunciation for the French word/phrase '{}' meaning '{}'. "
+    "Use standard IPA notation. "
+    "Return only the IPA pronunciation, enclosed in slashes."
 )
 
-MODEL = "grok-4-fast-non-reasoning"
+MODEL = "grok-4-fast-reasoning"
 
 SAVE_INTERVAL = 10
 # =========================================
@@ -38,13 +35,11 @@ client = OpenAI(
 df = pd.read_csv(CSV_FILE)
 
 # Ensure example columns exist
-for col in EXAMPLE_FR_COLS + EXAMPLE_EN_COLS:
-    if col not in df.columns:
-        df[col] = ""
+if IPA_COL not in df.columns:
+    df[IPA_COL] = ""
 
 rows_to_generate = df[
-    (df[EXAMPLE_FR_COLS].isna().any(axis=1) | (df[EXAMPLE_FR_COLS] == "").any(axis=1))
-    & (df[TERM_TYPE_COL] != "phrase")
+    (df[IPA_COL].isna() | (df[IPA_COL] == "")) & (df[TERM_TYPE_COL] != "phrase")
 ]
 
 
@@ -78,27 +73,7 @@ for idx, row in tqdm(rows_to_generate.iterrows(), total=rows_to_generate.shape[0
 
         response_text = completion.choices[0].message.content.strip()
 
-        lines = [l.strip() for l in response_text.split("\n") if l.strip()]
-
-        fr_sentences = []
-        en_sentences = []
-
-        for line in lines:
-            if "|" in line:
-                fr, en = line.split("|", 1)
-                fr_sentences.append(fr.strip())
-                en_sentences.append(en.strip())
-
-        while len(fr_sentences) < 3:
-            fr_sentences.append("")
-            en_sentences.append("")
-
-        fr_sentences = fr_sentences[:3]
-        en_sentences = en_sentences[:3]
-
-        for i in range(3):
-            df.at[idx, EXAMPLE_FR_COLS[i]] = fr_sentences[i]
-            df.at[idx, EXAMPLE_EN_COLS[i]] = en_sentences[i]
+        df.at[idx, IPA_COL] = response_text.strip()
 
         count += 1
 
