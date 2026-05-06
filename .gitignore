@@ -1,6 +1,6 @@
 /Lists*
+/Archived Term Lists
 __pycache__
-*.csv
 *.env
 /pyenv*
 /.vscode*
