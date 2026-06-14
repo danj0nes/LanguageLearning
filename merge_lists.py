@@ -39,6 +39,13 @@ else:
     list_number = int(df1["LIST_NUMBER"].max()) + 1
     df2["LIST_NUMBER"] = list_number
 
+# ----- Duplicate protection -----
+
+duplicate_terms = set(df1["TERM"]).intersection(set(df2["TERM"]))
+
+if duplicate_terms:
+    raise ValueError(f"Duplicate TERM values found: {sorted(duplicate_terms)}")
+
 # ----- Align columns -----
 
 for column in df1.columns:
