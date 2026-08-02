@@ -7,6 +7,9 @@ NEW_TERM_LIST = r"Lists [138-]/Verbes 26 [139].csv"
 df1 = pd.read_csv(MAIN_TERM_LIST)
 df2 = pd.read_csv(NEW_TERM_LIST)
 
+# NEED TO INFORCE DATA TYPES!!!
+
+
 # ----- UNIQUE_ID handling -----
 
 if "UNIQUE_ID" not in df1.columns:
