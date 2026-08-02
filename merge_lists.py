@@ -1,7 +1,7 @@
 import pandas as pd
 
-MAIN_TERM_LIST = r"20260614_export.csv"
-NEW_TERM_LIST = r"Lists [138-]/Verbes 25 [138].csv"
+MAIN_TERM_LIST = r"20260802_export.csv"
+NEW_TERM_LIST = r"Lists [138-]/Verbes 26 [139].csv"
 
 # Load files
 df1 = pd.read_csv(MAIN_TERM_LIST)
