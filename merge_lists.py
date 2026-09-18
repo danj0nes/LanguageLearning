@@ -7,9 +7,6 @@ NEW_TERM_LIST = r"Lists [138-]/Verbes 26 [139].csv"
 df1 = pd.read_csv(MAIN_TERM_LIST)
 df2 = pd.read_csv(NEW_TERM_LIST)
 
-# NEED TO INFORCE DATA TYPES!!!
-
-
 # ----- UNIQUE_ID handling -----
 
 if "UNIQUE_ID" not in df1.columns:
@@ -57,9 +54,14 @@ for column in df1.columns:
 
 df2 = df2[df1.columns]
 
-# ----- Append and save -----
+# ----- Append, enforce, and save -----
 
 combined = pd.concat([df1, df2], ignore_index=True)
+
+# Enforce types
+for col in ["UNIQUE_ID", "LIST_NUMBER"]:
+    if col in combined:
+        combined[col] = pd.to_numeric(combined[col], errors="coerce").astype("Int64")
 
 combined.to_csv(MAIN_TERM_LIST, index=False)
 
