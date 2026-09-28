@@ -40,6 +40,10 @@ for col in ["UNIQUE_ID", "LIST_NUMBER"]:
     if col in df:
         df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
 
+for col in ["DEF_DATE_LAST_TESTED", "TERM_DATE_LAST_TESTED"]:
+    if col in df:
+        df[col] = pd.to_datetime(df[col]).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
 df.to_csv(output_path, index=False)
 
 print(f"Saved: {output_path}")
