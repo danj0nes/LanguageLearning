@@ -18,7 +18,6 @@ NEW_TERM_LISTS = [
     r"Lists [138-]/Adjectifs Courant 14 [152].csv",
     r"Lists [138-]/Mots Courants 14 [153].csv",
     r"Lists [138-]/Noms Courants 41 [154].csv",
-    r"Lists [138-]/Verbes 33 [155].csv",
 ]
 
 
@@ -196,9 +195,9 @@ for col in ["DEF_DATE_LAST_TESTED", "TERM_DATE_LAST_TESTED"]:
 
     if col in combined.columns:
 
-        combined[col] = pd.to_datetime(combined[col], errors="coerce").dt.strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+        combined[col] = pd.to_datetime(
+            combined[col], errors="coerce", format="mixed"
+        ).dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 # ============================================================

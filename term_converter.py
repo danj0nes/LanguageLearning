@@ -42,7 +42,7 @@ for col in ["UNIQUE_ID", "LIST_NUMBER"]:
 
 for col in ["DEF_DATE_LAST_TESTED", "TERM_DATE_LAST_TESTED"]:
     if col in df:
-        df[col] = pd.to_datetime(df[col]).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        df[col] = pd.to_datetime(df[col]).dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 df.to_csv(output_path, index=False)
 
