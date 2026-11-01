@@ -3,21 +3,7 @@ import pandas as pd
 MAIN_TERM_LIST = r"French Vocab.csv"
 
 NEW_TERM_LISTS = [
-    r"Lists [138-]/Verbes 27 [140].csv",
-    r"Lists [138-]/Noms Courants 37 [141].csv",
-    r"Lists [138-]/Noms Courants 38 [142].csv",
-    r"Lists [138-]/Verbes 28 [143].csv",
-    r"Lists [138-]/Verbes 29 [144].csv",
-    r"Lists [138-]/Mots Courants 13 [145].csv",
-    r"Lists [138-]/Noms Courants 39 [146].csv",
-    r"Lists [138-]/Expressions et Phrases 20 [147].csv",
-    r"Lists [138-]/Verbes 30 [148].csv",
-    r"Lists [138-]/Verbes 31 [149].csv",
-    r"Lists [138-]/Verbes 32 [150].csv",
-    r"Lists [138-]/Noms Courants 40 [151].csv",
-    r"Lists [138-]/Adjectifs Courant 14 [152].csv",
-    r"Lists [138-]/Mots Courants 14 [153].csv",
-    r"Lists [138-]/Noms Courants 41 [154].csv",
+    r"Lists [138-]/Verbes 34 [156].csv",
 ]
 
 
